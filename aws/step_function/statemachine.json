@@ -1,0 +1,80 @@
+{
+  "Comment": "State Machine",
+  "StartAt": "Batch Card Ids",
+  "States": {
+    "Batch Card Ids": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Output": "{% $states.result.Payload %}",
+      "Arguments": {
+        "FunctionName": "arn:aws:lambda:us-east-2:776561161152:function:batch_cards:$LATEST"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Next": "Process Card Ids"
+    },
+    "Process Card Ids": {
+      "Type": "Map",
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "DISTRIBUTED",
+          "ExecutionType": "STANDARD"
+        },
+        "StartAt": "Wait",
+        "States": {
+          "Wait": {
+            "Type": "Wait",
+            "Seconds": 1,
+            "Next": "Get Card Prices"
+          },
+          "Get Card Prices": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Output": "{% $states.result.Payload %}",
+            "Arguments": {
+              "FunctionName": "arn:aws:lambda:us-east-2:776561161152:function:get_card_prices:$LATEST",
+              "Payload": "{% $states.input %}"
+            },
+            "End": true,
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "BackoffRate": 2,
+                "IntervalSeconds": 1,
+                "MaxAttempts": 3
+              }
+            ]
+          }
+        }
+      },
+      "Label": "ProcessCardIds",
+      "MaxConcurrency": 1,
+      "ItemReader": {
+        "Resource": "arn:aws:states:::s3:getObject",
+        "ReaderConfig": {
+          "InputType": "JSON"
+        },
+        "Arguments": {
+          "Bucket": "{% $states.input.claimCheck.bucket %}",
+          "Key": "{% $states.input.claimCheck.key %}"
+        }
+      },
+      "End": true
+    }
+  },
+  "QueryLanguage": "JSONata"
+}
